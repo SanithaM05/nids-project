@@ -1,4 +1,4 @@
-from scapy.all import sniff
+from scapy.all import sniff, IP, TCP, UDP
 import joblib
 import pandas as pd
 import time
@@ -6,7 +6,6 @@ import time
 # Load model
 model = joblib.load("model.pkl")
 
-# Column names
 columns = [
     "duration","protocol_type","service","flag","src_bytes","dst_bytes","land",
     "wrong_fragment","urgent","hot","num_failed_logins","logged_in","num_compromised",
@@ -21,27 +20,43 @@ columns = [
     "dst_host_srv_rerror_rate"
 ]
 
-print("✅ NIDS Started...")
-
-# Your IP (optional ignore)
-MY_IP = "192.168.1.119"
+print("🚀 REAL NIDS RUNNING...")
 
 packet_count = {}
+port_scan_tracker = {}
 start_time = time.time()
 
 def process_packet(packet):
     global start_time
 
     try:
-        # Reset count every 10 sec
-        if time.time() - start_time > 10:
-            packet_count.clear()
-            start_time = time.time()
+        if not packet.haslayer(IP):
+            return
 
-        src_ip = packet[0][1].src
+        src_ip = packet[IP].src
         length = len(packet)
 
+        # Reset every 10 seconds
+        if time.time() - start_time > 10:
+            packet_count.clear()
+            port_scan_tracker.clear()
+            start_time = time.time()
+
+        # Packet count
         packet_count[src_ip] = packet_count.get(src_ip, 0) + 1
+
+        # Port tracking
+        if packet.haslayer(TCP):
+            port = packet[TCP].dport
+        elif packet.haslayer(UDP):
+            port = packet[UDP].dport
+        else:
+            port = 0
+
+        if src_ip not in port_scan_tracker:
+            port_scan_tracker[src_ip] = set()
+
+        port_scan_tracker[src_ip].add(port)
 
         # -------- FEATURE MAPPING --------
         features = [0]*41
@@ -51,42 +66,37 @@ def process_packet(packet):
         features[22] = packet_count[src_ip]
         features[23] = 1
 
-        if packet.haslayer("TCP"):
+        if packet.haslayer(TCP):
             features[1] = 1
-        elif packet.haslayer("UDP"):
+        elif packet.haslayer(UDP):
             features[1] = 2
         else:
             features[1] = 0
 
         df = pd.DataFrame([features], columns=columns)
-
         prediction = model.predict(df)
 
-        # -------- TEST MODE (FOR DEMO) --------
-        if length > 60 and packet_count[src_ip]%10 == 0:
-            print(f"⚠️ TEST ATTACK from {src_ip}")
+        # -------- REAL DETECTION --------
 
-            with open("alerts.log", "a") as f:
-                f.write(f"Test Attack from {src_ip}\n")
+        if packet_count[src_ip] > 100:
+            msg = f"🚨 DDoS detected from {src_ip}"
 
-        # -------- REAL LOGIC --------
-        elif packet_count[src_ip] > 100:
-            print(f"⚠️ DDoS suspected from {src_ip}")
+        elif len(port_scan_tracker[src_ip]) > 20:
+            msg = f"🚨 Port Scan detected from {src_ip}"
 
-            with open("alerts.log", "a") as f:
-                f.write(f"DDoS from {src_ip}\n")
-
-        elif prediction[0] == "attack" and length > 100:
-            print(f"⚠️ ML Attack detected from {src_ip}")
-
-            with open("alerts.log", "a") as f:
-                f.write(f"ML Attack from {src_ip}\n")
+        elif prediction[0] == "attack":
+            msg = f"🚨 ML Attack detected from {src_ip}"
 
         else:
             print("Normal traffic")
+            return
+
+        print(msg)
+
+        with open("alerts.log", "a") as f:
+            f.write(msg + "\n")
 
     except:
         pass
 
-# Start sniffing
-sniff(prn=process_packet, count=100)
+sniff(prn=process_packet, store=False)

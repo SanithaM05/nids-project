@@ -33,4 +33,4 @@ model.fit(X, y)
 
 joblib.dump(model, "model.pkl")
 
-print("✅ Model trained and saved")
+print("✅ Model trained")

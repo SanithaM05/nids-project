@@ -1,53 +1,14 @@
 import streamlit as st
 import pandas as pd
-import random
-import time
 import plotly.express as px
+import time
+from collections import Counter
 
 st.set_page_config(layout="wide")
 
-st.title("🚨 NIDS with DevOps Dashboard")
+st.title("🚨 Real-Time Network Intrusion Detection System")
 
-# -------------------------------
-# TOP METRICS
-# -------------------------------
-col1, col2, col3 = st.columns(3)
-
-col1.metric("Detection Accuracy", "98.7%")
-col2.metric("Active Models", "1 Running")
-col3.metric("System Status", "🟢 Operational")
-
-# -------------------------------
-# TRAFFIC GRAPH
-# -------------------------------
-st.subheader("📈 Traffic Volume Over Time")
-
-data = pd.DataFrame({
-    "time": list(range(50)),
-    "traffic": [random.randint(10, 200) for _ in range(50)]
-})
-
-fig = px.line(data, x="time", y="traffic")
-st.plotly_chart(fig, use_container_width=True)
-
-# -------------------------------
-# ATTACK DISTRIBUTION
-# -------------------------------
-st.subheader("📊 Attack Types Distribution")
-
-attack_data = pd.DataFrame({
-    "type": ["DoS", "Probe", "R2L", "U2R"],
-    "count": [random.randint(10,100) for _ in range(4)]
-})
-
-fig2 = px.bar(attack_data, x="type", y="count", color="type")
-st.plotly_chart(fig2, use_container_width=True)
-
-# -------------------------------
-# ALERTS SECTION
-# -------------------------------
-st.subheader("🚨 Active Alerts")
-
+# ------------------ READ ALERTS ------------------
 alerts = []
 try:
     with open("alerts.log", "r") as f:
@@ -55,34 +16,88 @@ try:
 except:
     pass
 
+# ------------------ TOP METRICS ------------------
+total_alerts = len(alerts)
+unique_ips = set()
+
+for alert in alerts:
+    parts = alert.split()
+    if len(parts) > 3:
+        unique_ips.add(parts[-1])
+
+col1, col2, col3 = st.columns(3)
+
+col1.metric("Total Alerts", total_alerts)
+col2.metric("Suspicious IPs", len(unique_ips))
+col3.metric("System Status", "🟢 Running")
+
+# ------------------ ALERTS SECTION ------------------
+st.subheader("🚨 Live Alerts")
+
 if alerts:
-    for alert in alerts[-5:]:
-        st.error(alert)
+    for alert in alerts[-10:]:
+        st.error(alert.strip())
 else:
     st.success("No threats detected")
 
-# -------------------------------
-# SUSPICIOUS IP TABLE
-# -------------------------------
+# ------------------ ATTACK TYPE ANALYSIS ------------------
+st.subheader("📊 Attack Distribution")
+
+attack_types = []
+for alert in alerts:
+    if "DDoS" in alert:
+        attack_types.append("DDoS")
+    elif "Port Scan" in alert:
+        attack_types.append("Port Scan")
+    elif "ML Attack" in alert:
+        attack_types.append("ML Attack")
+
+if attack_types:
+    count = Counter(attack_types)
+    df = pd.DataFrame({
+        "Attack": list(count.keys()),
+        "Count": list(count.values())
+    })
+
+    fig = px.bar(df, x="Attack", y="Count", color="Attack")
+    st.plotly_chart(fig, use_container_width=True)
+else:
+    st.info("No attack data yet")
+
+# ------------------ SUSPICIOUS IP TABLE ------------------
 st.subheader("🌐 Suspicious IPs")
 
-ip_data = pd.DataFrame({
-    "IP": ["192.168.1.100","192.168.1.102","192.168.1.105"],
-    "Attack Type": ["DoS","Probe","Port Scan"],
-    "Frequency": [10, 7, 5]
-})
+ip_counter = Counter()
+for alert in alerts:
+    parts = alert.split()
+    if len(parts) > 3:
+        ip_counter[parts[-1]] += 1
 
-st.dataframe(ip_data)
+if ip_counter:
+    df_ip = pd.DataFrame({
+        "IP": list(ip_counter.keys()),
+        "Frequency": list(ip_counter.values())
+    })
 
-# -------------------------------
-# FEATURE TABLE (SIMULATION)
-# -------------------------------
-st.subheader("🔍 Feature Extraction")
+    st.dataframe(df_ip)
+else:
+    st.info("No suspicious IPs yet")
 
-feature_data = pd.DataFrame({
-    "Source IP": ["192.168.1.100","192.168.1.102"],
-    "Packet Size": [120, 300],
-    "Prediction": ["Normal","Attack"]
-})
+# ------------------ LIVE TRAFFIC GRAPH ------------------
+st.subheader("📈 Alert Activity Over Time")
 
-st.dataframe(feature_data)
+times = list(range(len(alerts)))
+counts = list(range(1, len(alerts)+1))
+
+if alerts:
+    df_graph = pd.DataFrame({
+        "Time": times,
+        "Alerts": counts
+    })
+
+    fig2 = px.line(df_graph, x="Time", y="Alerts")
+    st.plotly_chart(fig2, use_container_width=True)
+
+# ------------------ AUTO REFRESH ------------------
+time.sleep(3)
+st.rerun()
