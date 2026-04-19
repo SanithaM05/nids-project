@@ -1,7 +1,9 @@
-scapy
+streamlit
+scikit-learn
 pandas
 numpy
-scikit-learn
-streamlit
+matplotlib
+seaborn
+scapy
 joblib
 plotly
